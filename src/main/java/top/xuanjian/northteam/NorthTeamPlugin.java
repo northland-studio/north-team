@@ -280,12 +280,22 @@ public final class NorthTeamPlugin extends JavaPlugin {
     }
 
     /** 给命令发送者发一条中文提示（MiniMessage + 传统颜色码混用均可）。 */
+    /**
+     * 给命令发送者发一条带前缀的消息，**同时写入服务端日志**。
+     *
+     * <p>为什么要写日志：{@code /nt list}、{@code /nt info}、{@code /nt apply} 的结果是
+     * 异步（HTTP）返回的，而 RCON / 面板这类一次性连接在首帧响应后就关闭了 —— 只发给
+     * sender 的话结果会被静默丢弃（控制台与游戏内正常，面板里只能看到「正在拉取…」）。
+     * 落一份日志既能保证面板/RCON 场景可追溯，也让 CI 断言有稳定的证据来源。
+     */
     public void send(CommandSender sender, String text) {
+        getLogger().info(plain(text));
         sender.sendMessage(MiniMessages.parse(PREFIX + text));
     }
 
-    /** 给命令发送者发一条无前缀的续行。 */
+    /** 给命令发送者发一条无前缀的续行（同样写日志）。 */
     public void sendRaw(CommandSender sender, String text) {
+        getLogger().info(plain(text));
         sender.sendMessage(MiniMessages.parse(text));
     }
 
