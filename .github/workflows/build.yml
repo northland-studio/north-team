@@ -18,7 +18,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write   # 需要写权限：发布 ci-latest 滚动 Release（挂载构建出的 jar）
 
 concurrency:
   group: build-${{ github.ref }}
@@ -45,6 +45,27 @@ jobs:
 
       - name: Build (fat jar via Shadow)
         run: gradle build --no-daemon --stacktrace
+
+      # 滚动发布：把最新 jar 挂到固定 tag 的 Release 上。
+      # 这样「安装/下载插件」不需要登录 GitHub，也不需要下载 Actions artifact
+      # （artifact 即使公开仓库也必须带 token，401），直接给一个永久直链：
+      #   https://github.com/northland-studio/north-team/releases/download/ci-latest/NorthTeam-<version>.jar
+      - name: Publish rolling release (ci-latest)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          JAR="$(ls build/libs/NorthTeam-*.jar | grep -v -- '-sources' | grep -v -- '-javadoc' | head -1)"
+          ls -lh "$JAR"
+          gh release delete ci-latest --yes --cleanup-tag >/dev/null 2>&1 || true
+          gh release create ci-latest "$JAR" \
+            --title "CI 最新构建（ci-latest）" \
+            --notes "由 GitHub Actions 自动发布：提交 ${GITHUB_SHA:0:7}（$(date -u '+%Y-%m-%d %H:%M:%S UTC')）。
+
+          安装：把 NorthTeam-*.jar 放进服务端 plugins/ 后重启；首次启动会生成 plugins/NorthTeam/config.yml，填写 api.base 与 api.server_key。详见 README。" \
+            --prerelease
+          echo "release: https://github.com/${GITHUB_REPOSITORY}/releases/tag/ci-latest"
 
       - name: Show build output
         run: ls -lh build/libs
