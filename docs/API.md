@@ -66,7 +66,7 @@
 
 | 字段 | 约束 |
 |---|---|
-| `key` | `[a-z0-9_]{1,16}`，配置内唯一；插件用它做 scoreboard team 名（前缀 `nt_`） |
+| `key` | `[a-z0-9_]{1,13}`，配置内唯一；插件用它做 scoreboard team 名（前缀 `nt_`，合计不超过原版 16 字符上限） |
 | `display_name` | 1~32 字符，MiniMessage 允许 |
 | `color` | 16 种原版颜色名之一：`black dark_blue dark_green dark_aqua dark_red dark_purple gold gray dark_gray blue green aqua red light_purple yellow white` |
 | `prefix` / `suffix` | MiniMessage 字符串，长度 ≤ 64（含标签）；允许 `&` 传统颜色码，插件侧统一转换 |
