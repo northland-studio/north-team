@@ -44,6 +44,12 @@ if [ ! -f "$PLUGIN_JAR" ]; then
   exit 1
 fi
 
+# 关键：先把 jar 路径转成绝对路径。下面会 cd 进 $WORKDIR，届时相对路径（build/libs/…）
+# 会失效，cp 静默失败（本脚本是 set -uo pipefail，没有 -e）→ 插件不会进 plugins/，
+# 服务端启动后 "Initialized 0 plugins"，所有 /nt 命令报 Unknown command。
+PLUGIN_JAR="$(cd "$(dirname "$PLUGIN_JAR")" && pwd)/$(basename "$PLUGIN_JAR")"
+log "插件 jar（绝对路径）：$PLUGIN_JAR"
+
 # ------------------------------------------------------- 准备服务端目录 ----
 rm -rf "$WORKDIR"
 mkdir -p "$WORKDIR/plugins"
@@ -62,9 +68,17 @@ if [ "$ACTUAL_SHA" != "$PAPER_SHA256" ]; then
 fi
 ok "Paper sha256 校验通过（$ACTUAL_SHA）"
 
-cp "$PLUGIN_JAR" plugins/
-log "已安装插件：$(basename "$PLUGIN_JAR")"
-unzip -p plugins/"$(basename "$PLUGIN_JAR")" plugin.yml > /dev/null 2>&1 \
+PLUGIN_BASENAME="$(basename "$PLUGIN_JAR")"
+if ! cp "$PLUGIN_JAR" plugins/; then
+  bad "复制插件到 plugins/ 失败：$PLUGIN_JAR"
+  exit 1
+fi
+if [ ! -f "plugins/$PLUGIN_BASENAME" ]; then
+  bad "插件未出现在 plugins/ 目录（服务端会 Initialized 0 plugins）"
+  exit 1
+fi
+ok "插件已放入 plugins/：$PLUGIN_BASENAME（$(stat -c%s "plugins/$PLUGIN_BASENAME") 字节）"
+unzip -p "plugins/$PLUGIN_BASENAME" plugin.yml > /dev/null 2>&1 \
   && ok "插件 jar 内含 plugin.yml" \
   || bad "插件 jar 内没有 plugin.yml"
 
@@ -81,7 +95,7 @@ max-players=20
 view-distance=4
 simulation-distance=4
 level-name=world
-level-type=minecraft\:flat
+level-type=minecraft\:normal
 generate-structures=false
 PROPS
 
