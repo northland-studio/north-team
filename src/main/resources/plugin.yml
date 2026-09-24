@@ -1,0 +1,40 @@
+# NorthTeam —— 队伍信息采集公示系统（游戏侧组件）
+#
+# 使用 Bukkit 风格 plugin.yml（Paper 26.2 上 WorldGuard / AuthMe 等成熟插件同样使用，
+# 已确认可用），不使用 paper-plugin.yml / Brigadier，以降低版本风险。
+#
+# 注意：version 由 Gradle 的 processResources 在构建时注入（见 build.gradle），
+# 不要手动改成固定值，否则与 build.gradle 的 version 不一致。
+
+name: NorthTeam
+version: '${version}'
+main: top.xuanjian.northteam.NorthTeamPlugin
+
+# Paper 26.2 接受的有效范围是 1.13 - 26.2。
+# 必须加引号：不加引号时 YAML 会把 26.2 解析成浮点数。
+api-version: '26.2'
+
+description: 队伍信息采集公示系统 —— 按官网配置全量重建服务端队伍与侧边栏记分板
+author: Morzane蓦然
+authors: [Morzane]
+website: https://xuanjian.top
+
+commands:
+  nt:
+    description: NorthTeam 队伍管理命令
+    usage: /nt <list|info|apply|import|reload|status>
+    aliases: [northteam]
+    # 这里刻意不设置 permission 字段：/nt 的权限是「分子命令」的
+    # （只读用 northteam.view，写操作用 northteam.admin），
+    # 由 NorthTeamCommand 在运行时逐个子命令校验，见 plugin.yml 下方的 permissions。
+    permission-message: 你没有权限使用该命令。
+
+permissions:
+  # 写操作：/nt apply、/nt import、/nt reload
+  northteam.admin:
+    description: 允许执行 /nt apply、/nt import、/nt reload（会修改服务端队伍与记分板）
+    default: op
+  # 只读：/nt list、/nt info、/nt status
+  northteam.view:
+    description: 允许查看 /nt list、/nt info、/nt status
+    default: op

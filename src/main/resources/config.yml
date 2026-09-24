@@ -1,0 +1,58 @@
+# ==========================================================================
+# NorthTeam 配置文件
+# 队伍信息采集公示系统（游戏侧组件）—— 与官网 https://xuanjian.top 对接
+#
+# 修改本文件后执行 /nt reload 生效（无需重启服务器）。
+# 接口契约见仓库 docs/API.md。
+# ==========================================================================
+
+api:
+  # 官网地址。契约里的路径是 /api/team/list、/api/team/export/:id、/api/team/import，
+  # 所以这里只填「站点根」，不要带 /api 或 /api/team。
+  # 若误填成 https://xuanjian.top/api/team，插件会自动剥掉多余后缀。
+  base: "https://xuanjian.top"
+
+  # 插件读写接口的密钥（请求头 X-Server-Key）。
+  # 取自官网后台 mod_servers.server_key，与 /api/mod/* 是同一套密钥。
+  # 留空时所有接口都会失败（官网返回 401），插件会在启动日志里给出提示。
+  # 也可以用环境变量 NORTHTEAM_SERVER_KEY 覆盖（推荐在 CI / 容器里用，避免密钥进仓库）。
+  server_key: ""
+
+  # 连接超时与请求超时（秒）。官网不可达时插件会回退到本地缓存。
+  connect_timeout_seconds: 5
+  request_timeout_seconds: 15
+
+# 开服时按 state.json 记录的「配置 ID + 本地缓存」自动重放一次。
+# 必须开启才能实现重启自愈：记分板 team 不持久化，重启后会全部丢失。
+auto_reapply_on_start: true
+
+apply:
+  # /nt apply <id> 的「全量重建」语义（契约 4.1）：
+  # 删除配置外的受管队伍（本插件命名空间 nt_/sb_ 内、且不在新配置里的队伍）。
+  # 关闭后只做「新建 + 更新」，不删除任何队伍。
+  wipe_unmanaged_teams: true
+
+  # 永不删除的队伍名单，支持 * 通配。
+  # 这是最后一道防线：即使某个队伍落在本插件的命名空间里，只要命中这里就不会被删除。
+  # 默认保护 sidebar_*（契约约定）与本插件自己的侧边栏行队伍 sb_*。
+  protected_teams:
+    - "sidebar_*"
+    - "sb_*"
+
+scoreboard:
+  # 本地总开关。false 时无论官网配置怎么写，都不做记分板同步，
+  # 并会清理本插件创建的侧边栏（用于临时关掉公示，不影响 /team 的队伍数据）。
+  master_enabled: true
+
+  # 侧边栏最多渲染多少行（防止官网给了大量队伍把侧边栏塞满）。
+  # 侧边栏采用「每队一行 + 每行一个记分板队伍」的经典做法，
+  # 行队伍命名 sb_1、sb_2…，与 /team 用的正式队伍（nt_<key>）分开。
+  max_rows: 15
+
+member:
+  # 离线玩家是否在下次登录时自动补入其队伍（契约 4.2）。
+  # 改动成员名单后，离线玩家不会立即生效，需要他们重新登录。
+  assign_on_join: true
+
+# 输出更详细的调试日志（HTTP 请求、缓存预热结果等）。
+debug: false
