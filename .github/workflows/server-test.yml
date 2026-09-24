@@ -1,0 +1,152 @@
+# ==========================================================================
+# NorthTeam 真机联机验收（重点流水线）
+#
+# 与 build.yml 的分工：
+#   build.yml       —— 只负责「能不能编译出 jar」
+#   server-test.yml —— 负责「jar 放到真实 Paper 26.2 上能不能跑对」
+#
+# 本流水线做的事：
+#   1. gradle build 出插件 jar
+#   2. 下载 Paper 26.2-124（sha256 校验，与生产服务器同一构建）
+#   3. 接受 EULA、online-mode=false、开启 RCON，把插件放进 plugins/
+#   4. 后台起服务器，等日志出现 "Done (" 后通过 stdin 依次执行
+#      nt list / nt status / nt info / nt apply --dry-run / nt apply / nt reload
+#   5. 断言：插件 enable、命令已注册、4 个队伍、侧边栏 4 行、规则字段往返一致、
+#      失败路径给出中文可读提示而不是崩溃
+#   6. 上传服务端完整日志 + 摘要为 artifact；失败时把诊断写进 ci-result.txt 并提交回分支
+#
+# 测试数据来自官网公开接口（无需认证）：
+#   公开列表：GET https://xuanjian.top/api/team/public
+#   公开详情：GET https://xuanjian.top/api/team/public/3
+#   样例配置 ID = 3（「CI 测试用例 · 周年庆大逃杀」，4 队 11 人，is_public=1）
+#   >> 样例由官网维护；ID 变更时只需要改下面 env 里的 NT_TEST_CONFIG_ID。
+#
+# 关于密钥：插件通道（/api/team/list、/api/team/export/:id、POST /api/team/import）
+#   需要 X-Server-Key。密钥**不进仓库**，通过 GitHub Actions secret 注入：
+#     仓库 Settings → Secrets and variables → Actions → New repository secret
+#     名称：NT_SERVER_KEY   值：官网 mod_servers.server_key
+#   没配置该 secret 时，本流水线自动降级为「优雅降级验收」（仍然会失败即红，
+#   但只断言插件能启用、命令已注册、失败路径可读、不抛栈）。
+#
+# 客户端方案说明（重要，卡点如实记录）：
+#   理想做法是再起两个 xvfb + mesa 的无头客户端连进来，截图 tab 列表/聊天/侧边栏。
+#   本仓库把这条独立成 client-screenshots.yml（可选、非阻塞），原因：
+#     · 26.2 客户端的版本清单/依赖在 CI 上尚未验证，需要多轮迭代才能稳定；
+#     · 客户端截图属于「展示性验收」，而队伍/记分板的正确性由本流水线的
+#       服务端断言（nt status 会 dump 出游戏内真实 scoreboard 状态）覆盖。
+#   因此当前以「服务端断言 + 完整日志 artifact」为准；客户端的卡点见
+#   client-screenshots.yml 的注释与 README「CI 构建与验收」一节。
+# ==========================================================================
+name: server-test
+
+on:
+  push:
+    branches: ['main']
+  pull_request:
+    branches: ['main']
+  workflow_dispatch:
+
+permissions:
+  contents: write   # 失败时要把 ci-result.txt 提交回分支
+
+concurrency:
+  group: server-test-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Paper 26.2 服务端（与生产 paper-26.2-124 完全一致）
+  PAPER_URL: https://fill-data.papermc.io/v1/objects/274bbcb9807ad79a479617ce695a7c0686e652a8d1cabfd0e288d92a3ea29593/paper-26.2-124.jar
+  PAPER_SHA256: 274bbcb9807ad79a479617ce695a7c0686e652a8d1cabfd0e288d92a3ea29593
+  PAPER_JAR_NAME: paper-26.2-124.jar
+  # 官网地址与公开测试样例 ID（样例由官网维护，ID 变更时改这里）
+  NT_API_BASE: https://xuanjian.top
+  NT_TEST_CONFIG_ID: "3"
+
+jobs:
+  server-acceptance:
+    name: Paper 26.2 真机验收
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Gradle 9.5.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.1'
+
+      - name: Build plugin jar
+        run: gradle build --no-daemon --stacktrace
+
+      - name: Locate plugin jar
+        id: jar
+        run: |
+          set -euo pipefail
+          JAR="$(ls build/libs/NorthTeam-*.jar | grep -v -- '-sources' | grep -v -- '-javadoc' | head -1)"
+          echo "jar=$JAR"
+          echo "jar=$JAR" >> "$GITHUB_OUTPUT"
+          ls -lh "$JAR"
+
+      - name: Install headless runtime libs (xvfb / mesa)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb mesa-utils libgl1-mesa-dri libglu1-mesa unzip
+
+      - name: Run Paper 26.2 acceptance
+        id: smoke
+        env:
+          PLUGIN_JAR: ${{ steps.jar.outputs.jar }}
+          NT_SERVER_KEY: ${{ secrets.NT_SERVER_KEY }}
+        run: bash .github/scripts/server-smoke.sh
+
+      - name: Upload server artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-test-artifacts
+          path: |
+            .ci-server/server.log
+            .ci-server/server-plain.log
+            .ci-server/smoke-summary.txt
+            .ci-server/plugins/NorthTeam/state.json
+            .ci-server/plugins/NorthTeam/cache/*.json
+            .ci-server/plugins/NorthTeam/config.yml
+          if-no-files-found: warn
+          retention-days: 30
+
+      # 沿用 xuanjianmod 的 ci-result.txt 诊断模式：失败时把摘要提交回分支，
+      # 便于不开 GitHub 网页也能看到失败原因。
+      - name: Write ci-result.txt on failure
+        if: failure()
+        run: |
+          set -uo pipefail
+          if [ ! -f ci-result.txt ]; then
+            {
+              echo "NorthTeam 真机验收失败（未生成详细摘要）"
+              echo "时间：$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+              echo
+              echo "===== server.log 末尾 120 行 ====="
+              tail -n 120 .ci-server/server.log 2>/dev/null || echo "(无 server.log)"
+            } > ci-result.txt
+          fi
+          echo "----- ci-result.txt -----"
+          cat ci-result.txt
+
+      - name: Commit ci-result.txt back to branch
+        if: failure() && github.event_name != 'pull_request'
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ -f ci-result.txt ]; then
+            git add -f ci-result.txt
+            git commit -m "chore(ci): 记录真机验收失败诊断 [skip ci]" || echo "无变更可提交"
+            git push || echo "推送失败（可能无权限），已忽略"
+          fi

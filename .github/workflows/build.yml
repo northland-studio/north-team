@@ -1,0 +1,62 @@
+# ==========================================================================
+# NorthTeam 构建流水线
+#
+# 本仓库不做本地构建：所有编译与打包都在 GitHub Actions 上完成。
+# 产物：Actions artifact「NorthTeam-jar」中的 build/libs/NorthTeam-<version>.jar
+#
+# 工具链：JDK 25 + Gradle 9.5.1（与同机 xuanjianmod 的 CI 保持一致）
+# 注意：本仓库**不包含** gradle wrapper 二进制，因此这里使用 setup-gradle 提供的
+#       gradle 命令，而不是 ./gradlew。
+# ==========================================================================
+name: build
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Gradle build (JDK 25)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Gradle 9.5.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.1'
+
+      - name: Build (fat jar via Shadow)
+        run: gradle build --no-daemon --stacktrace
+
+      - name: Show build output
+        run: ls -lh build/libs
+
+      - name: Upload plugin jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: NorthTeam-jar
+          # 排除 sources/javadoc 之类的附属 jar，只保留可安装的插件 jar
+          path: |
+            build/libs/*.jar
+            !build/libs/*-sources.jar
+            !build/libs/*-javadoc.jar
+          if-no-files-found: error
+          retention-days: 30
