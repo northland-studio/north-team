@@ -85,20 +85,23 @@ jobs:
           echo "$PAPER_SHA256  .ci-server/$PAPER_JAR_NAME" | sha256sum -c -
           cp "$JAR" .ci-server/plugins/
           printf 'eula=true\n' > .ci-server/eula.txt
-          cat > .ci-server/server.properties <<'PROPS'
-online-mode=false
-enable-rcon=true
-rcon.port=25575
-rcon.password=ntcircon
-motd=NorthTeam CI
-spawn-protection=0
-max-players=20
-view-distance=4
-simulation-distance=4
-level-name=world
-level-type=minecraft\:flat
-generate-structures=false
-PROPS
+          # 注意：server.properties 用 printf 逐行写入，**不要用 heredoc**——
+          # heredoc 的内容必须与 YAML 块缩进对齐，一旦顶格写在第 1 列就会让整个
+          # workflow 文件解析失败（GitHub 会直接判为 invalid workflow）。
+          printf '%s\n' \
+            'online-mode=false' \
+            'enable-rcon=true' \
+            'rcon.port=25575' \
+            'rcon.password=ntcircon' \
+            'motd=NorthTeam CI' \
+            'spawn-protection=0' \
+            'max-players=20' \
+            'view-distance=4' \
+            'simulation-distance=4' \
+            'level-name=world' \
+            'level-type=minecraft\:flat' \
+            'generate-structures=false' \
+            > .ci-server/server.properties
           ls -lh .ci-server
 
       - name: Start Paper in background and wait for Done
