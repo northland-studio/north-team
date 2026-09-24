@@ -107,9 +107,10 @@ public final class NorthTeamPlugin extends JavaPlugin {
 
     private void warnIfUnconfigured() {
         if (!pluginConfig.hasServerKey()) {
-            warn("<yellow>尚未配置 server_key，读写接口都会失败（官网会返回 401）。");
-            warn("<gray>请在 config.yml 填写 api.server_key（取自官网 mod_servers.server_key），"
-                    + "或设置环境变量 NORTHTEAM_SERVER_KEY。");
+            warn("<yellow>未配置 server_key：读接口将走公开读通道（无认证，只能读取已公示的配置），"
+                    + "/nt import 不可用。");
+            warn("<gray>如需读取未公示配置或回传采集，请在 config.yml 填写 api.server_key"
+                    + "（取自官网 mod_servers.server_key），或设置环境变量 NORTHTEAM_SERVER_KEY。");
         }
         if (pluginConfig.apiBase().isBlank()) {
             warn("<yellow>api.base 为空，所有官网接口不可用。");

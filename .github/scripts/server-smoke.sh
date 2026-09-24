@@ -100,15 +100,15 @@ generate-structures=false
 PROPS
 
 # --------------------------------------------------------- 探测官网 ----
+# 样例配置 id=3 是**已公示**的，插件在未配置 server_key 时会自动走公开读通道
+# （契约 3.4 GET /api/team/public、3.5 GET /api/team/public/:id，均无需认证），
+# 因此即使 CI 没有配置 NT_SERVER_KEY secret，也能跑完整的 apply 验收。
 MODE="degraded"
-HTTP="skipped"
-if [ -n "$NT_SERVER_KEY" ]; then
-  HTTP="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$NT_API_BASE/api/team/public" 2>/dev/null || echo 000)"
-  if [ "$HTTP" = "200" ]; then
-    MODE="full"
-  fi
+HTTP="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$NT_API_BASE/api/team/public" 2>/dev/null || echo 000)"
+if [ "$HTTP" = "200" ]; then
+  MODE="full"
 fi
-log "验收模式：$MODE（官网探测 HTTP=$HTTP；NT_SERVER_KEY=$([ -n "$NT_SERVER_KEY" ] && echo 已提供 || echo 未提供)）"
+log "验收模式：$MODE（公开接口探测 HTTP=$HTTP；NT_SERVER_KEY=$([ -n "$NT_SERVER_KEY" ] && echo 已提供-插件通道 || echo 未提供-公开读通道)）"
 
 # --------------------------------------------------------- 启动服务端 ----
 log "启动 Paper 26.2（-Xmx1G --nogui）…"
@@ -239,13 +239,9 @@ if [ "$MODE" = "full" ]; then
   # reload 可用
   expect "config.yml 已重新加载" "/nt reload 生效"
 else
-  # 降级模式：验证失败路径是「中文可读提示」而不是崩溃
-  log "未满足完整验收条件，改为验证优雅降级路径"
-  if [ -n "$NT_SERVER_KEY" ]; then
-    expect "当前服务端" "status 仍能输出状态"
-  else
-    expect "尚未配置 server_key" "无密钥时给出中文可读提示"
-  fi
+  # 降级模式（官网不可达）：验证失败路径是「中文可读提示」而不是崩溃
+  log "官网不可达，降级为验证「优雅失败」路径"
+  expect "当前服务端" "status 仍能输出状态"
   expect_absent "NullPointerException" "没有空指针异常"
   expect_absent "Exception in thread" "没有未捕获异常"
 fi

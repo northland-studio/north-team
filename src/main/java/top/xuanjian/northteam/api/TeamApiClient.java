@@ -36,6 +36,9 @@ public final class TeamApiClient {
     private static final String LIST_PATH = "/api/team/list";
     private static final String EXPORT_PATH = "/api/team/export/";
     private static final String IMPORT_PATH = "/api/team/import";
+    /** 未配置 server_key 时的公开读通道（契约 3.4/3.5，无认证，仅 is_public=1）。 */
+    private static final String PUBLIC_LIST_PATH = "/api/team/public";
+    private static final String PUBLIC_EXPORT_PATH = "/api/team/public/";
 
     /** 读接口用：字段名 → 下划线，与契约的 snake_case 对齐。 */
     private final Gson gson = Json.GSON;
@@ -63,16 +66,25 @@ public final class TeamApiClient {
         return apiBase;
     }
 
-    /** 是否已经配置了密钥（未配置时读接口必然 401，提前给出可读提示）。 */
+    /**
+     * 是否已经配置了密钥。未配置时读接口自动退化到**公开读通道**（契约 3.4/3.5，
+     * 无认证、只返回 {@code is_public=1} 的配置）：公示数据本来就是公开的，
+     * 这样插件在只跑公示活动时无需任何密钥；写接口（import）仍然必须有密钥。
+     */
     public boolean hasServerKey() {
         return !serverKey.isEmpty();
     }
 
+    /** 当前读接口走的是哪条通道（仅用于日志/`/nt status` 展示）。 */
+    public String readChannel() {
+        return hasServerKey() ? "插件通道（X-Server-Key）" : "公开读通道（无认证，仅已公示）";
+    }
+
     /**
-     * 契约 3.1 {@code GET /api/team/list}：列出全部配置。
+     * 契约 3.1 {@code GET /api/team/list}；未配置密钥时改用 3.4 {@code GET /api/team/public}。
      */
     public ConfigListResponse listConfigs() throws ApiException {
-        String body = exchange(LIST_PATH, false, null);
+        String body = exchange(hasServerKey() ? LIST_PATH : PUBLIC_LIST_PATH, false, null);
         return parse(body, ConfigListResponse.class, "配置列表");
     }
 
@@ -87,13 +99,14 @@ public final class TeamApiClient {
 
     /**
      * 契约 3.2 {@code GET /api/team/export/:id}：取完整配置（含原文）。
-     * 插件通道不受 {@code is_public} 限制；404 表示配置不存在。
+     * 有密钥时不受 {@code is_public} 限制；无密钥时退回 3.5 {@code GET /api/team/public/:id}
+     * （未公示配置会 404）。两种通道返回的 JSON 形状一致，解析模型通用。
      */
     public RawConfig exportConfigRaw(int id) throws ApiException {
         if (id <= 0) {
             throw new ApiException(ApiException.Kind.CONFIG, "配置 ID 必须是正整数，收到：" + id);
         }
-        String body = exchange(EXPORT_PATH + id, false, null);
+        String body = exchange((hasServerKey() ? EXPORT_PATH : PUBLIC_EXPORT_PATH) + id, false, null);
         TeamConfig config = parse(body, TeamConfig.class, "配置详情");
         if (config == null) {
             throw new ApiException(ApiException.Kind.MALFORMED, "配置详情为空（契约 3.2 应返回完整配置）。");
@@ -191,9 +204,11 @@ public final class TeamApiClient {
             throw new ApiException(ApiException.Kind.CONFIG,
                     "尚未配置官网地址（config.yml 的 api_base 为空）。");
         }
-        if (!hasServerKey()) {
+        // 读接口：无密钥时走公开读通道（契约 3.4/3.5），因此这里不再拦截。
+        // 写接口（import 回传）必须要有密钥。
+        if (post && !hasServerKey()) {
             throw new ApiException(ApiException.Kind.CONFIG,
-                    "尚未配置 server_key（config.yml 的 server_key，或环境变量 NORTHTEAM_SERVER_KEY）。"
+                    "import 需要 server_key（config.yml 的 server_key，或环境变量 NORTHTEAM_SERVER_KEY）。"
                             + "密钥由官网 mod_servers.server_key 提供。");
         }
 
@@ -207,9 +222,11 @@ public final class TeamApiClient {
 
         HttpRequest.Builder builder = HttpRequest.newBuilder(uri)
                 .timeout(requestTimeout)
-                .header(HEADER_SERVER_KEY, serverKey)
                 .header("Accept", "application/json")
                 .header("User-Agent", "NorthTeam-Plugin");
+        if (hasServerKey()) {
+            builder.header(HEADER_SERVER_KEY, serverKey);
+        }
         if (post) {
             builder.header("Content-Type", "application/json; charset=utf-8")
                     .POST(HttpRequest.BodyPublishers.ofString(jsonBody, StandardCharsets.UTF_8));
