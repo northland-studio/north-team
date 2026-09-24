@@ -1,0 +1,44 @@
+# ---- Gradle ----
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+out/
+
+# ---- Java ----
+*.class
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+hs_err_pid*
+replay_pid*
+
+# ---- 运行期产物（本地冒烟测试）----
+run/
+server/
+logs/
+*.log
+
+# ---- CI 运行产物（真机验收 / 客户端截图用，绝不入库）----
+.ci-server/
+.ci-client/
+client-shots/
+smoke-summary.txt
+
+# 注意：ci-result.txt 是 CI 失败时**故意提交回分支**的诊断文件，
+# 因此这里刻意不忽略它。
+
+# ---- IDE ----
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
+
+# ---- 插件运行数据（本地测试用）----
+plugins/NorthTeam/
+cache/
+state.json
+
+# ---- OS ----
+.DS_Store
+Thumbs.db

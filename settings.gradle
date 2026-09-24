@@ -1,0 +1,3 @@
+// NorthTeam —— 队伍信息采集公示系统（游戏侧插件）
+// 单模块工程，rootProject.name 决定产物名：build/libs/NorthTeam-<version>.jar
+rootProject.name = 'NorthTeam'

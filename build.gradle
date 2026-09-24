@@ -1,0 +1,78 @@
+// ==========================================================================
+// NorthTeam 构建脚本
+//
+// 目标环境：Paper 26.2（Java 25）
+// 产物：build/libs/NorthTeam-<version>.jar（fat jar，Gson 已 relocate）
+//
+// 重要：Paper 从 26.2 起不再发布 *-R0.1-SNAPSHOT，API 依赖改用发布式版本号。
+// 这里钉 26.2.build.124-stable，与生产服务器 Paper 26.2-124 完全对齐。
+// ==========================================================================
+
+plugins {
+    id 'java'
+    // Shadow 用于把 Gson 打进 jar 并 relocate，避免与其它插件的 Gson 冲突。
+    // 9.6.1 要求 Gradle >= 9.2、Java >= 17。
+    id 'com.gradleup.shadow' version '9.6.1'
+}
+
+group = 'top.xuanjian'
+// 注意：本版本号必须与 NorthTeamPlugin.PLUGIN_VERSION 保持一致。
+version = '1.0.0'
+description = '队伍信息采集公示系统 —— Paper 服务端插件'
+
+repositories {
+    mavenCentral()
+    maven {
+        name = 'papermc'
+        url = uri('https://repo.papermc.io/repository/maven-public/')
+    }
+}
+
+dependencies {
+    // Paper API 只用于编译，运行期由服务端提供（不 shade、不打包）
+    compileOnly 'io.papermc.paper:paper-api:26.2.build.124-stable'
+
+    // JSON：契约明确要求使用 Gson，并 relocate 到 top.xuanjian.northteam.libs.gson
+    implementation 'com.google.code.gson:gson:2.11.0'
+}
+
+java {
+    toolchain {
+        // 本机与 CI 都使用 JDK 25
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 25
+}
+
+// 把 Gradle 的 version 注入 plugin.yml（源码里写的是 ${version} 占位符）
+tasks.named('processResources') {
+    filesMatching('plugin.yml') {
+        expand(version: project.version)
+    }
+}
+
+// 关闭默认的 thin jar，只保留 shadowJar，避免 build/libs 下出现两个 jar 造成混淆
+tasks.named('jar') {
+    enabled = false
+}
+
+tasks.named('shadowJar') {
+    // 产物直接叫 NorthTeam-<version>.jar，不带 -all 之类的 classifier
+    archiveClassifier.set('')
+
+    // MiniMessage/Adventure 用 Paper 自带的，不 shade；
+    // 只把 Gson 搬进本插件的私有包，彻底避免与其它插件的 Gson 版本冲突。
+    relocate 'com.google.gson', 'top.xuanjian.northteam.libs.gson'
+}
+
+// 确保 gradle build / gradle assemble 都会产出 fat jar
+tasks.named('assemble') {
+    dependsOn tasks.named('shadowJar')
+}
+tasks.named('build') {
+    dependsOn tasks.named('shadowJar')
+}
