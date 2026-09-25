@@ -70,6 +70,34 @@ jobs:
       - name: Show build output
         run: ls -lh build/libs
 
+      # 免登录分发的第二条通道（备用，防止 Release 资产拿不到）：
+      # 把 jar 推到一个只保留最新一次产物的 ci-artifacts 分支，直链形如
+      #   https://raw.githubusercontent.com/<owner>/<repo>/ci-artifacts/NorthTeam-<version>.jar
+      # raw 有 CDN 缓存，下载时可用 ?v=<sha> 破缓存。
+      - name: Publish jar to ci-artifacts branch
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          JAR="$(ls build/libs/NorthTeam-*.jar | grep -v -- '-sources' | grep -v -- '-javadoc' | head -1)"
+          NAME="$(basename "$JAR")"
+          STAGE="$(mktemp -d)"
+          cp "$JAR" "$STAGE/$NAME"
+          cd "$STAGE"
+          git init -q
+          git checkout -q -b ci-artifacts
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          printf '%s\n' "$NAME" > latest.txt
+          printf 'NorthTeam 最新构建产物\n\n文件：%s\n提交：%s\n时间：%s\n\n下载：\n  https://raw.githubusercontent.com/%s/ci-artifacts/%s\n' \
+            "$NAME" "${GITHUB_SHA:0:7}" "$(date -u '+%Y-%m-%d %H:%M:%S UTC')" "$GITHUB_REPOSITORY" "$NAME" > README.md
+          git add "$NAME" latest.txt README.md
+          git commit -qm "ci: NorthTeam ${GITHUB_SHA:0:7} 构建产物（$NAME）"
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push -f origin ci-artifacts
+          echo "下载直链: https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/ci-artifacts/${NAME}"
+
       - name: Upload plugin jar
         uses: actions/upload-artifact@v4
         with:
