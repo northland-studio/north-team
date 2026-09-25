@@ -17,7 +17,7 @@ plugins {
 
 group = 'top.xuanjian'
 // 注意：本版本号必须与 NorthTeamPlugin.PLUGIN_VERSION 保持一致。
-version = '1.0.1'
+version = '1.1.0'
 description = '队伍信息采集公示系统 —— Paper 服务端插件'
 
 repositories {

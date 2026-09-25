@@ -6,9 +6,13 @@ import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
 import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 文本解析工具：以 MiniMessage 为主，同时兼容 {@code &} 传统颜色码。
@@ -233,5 +237,110 @@ public final class MiniMessages {
             }
         }
         return true;
+    }
+
+    // ------------------------------------------------------------------
+    // 标签合法性检查（1.1.0）：把 <dark> 这类拼错的标签指出来
+    // ------------------------------------------------------------------
+
+    /** MiniMessage 里可用的标准标签（含别名），用于校验管理员输入。 */
+    private static final Set<String> KNOWN_TAGS = Set.of(
+            // 16 种原版颜色
+            "black", "dark_blue", "dark_green", "dark_aqua", "dark_red", "dark_purple", "gold",
+            "gray", "dark_gray", "blue", "green", "aqua", "red", "light_purple", "yellow", "white",
+            // 格式
+            "obfuscated", "bold", "strikethrough", "underlined", "italic", "reset",
+            // 其它常用标签
+            "newline", "gradient", "rainbow", "transition", "hover", "click", "key", "lang",
+            "translate", "selector", "score", "nbt", "font", "shadow", "color");
+
+    /** 常见拼错 → 建议写法。 */
+    private static final Map<String, String> TAG_SUGGESTIONS = Map.ofEntries(
+            Map.entry("dark", "dark_gray"),
+            Map.entry("grey", "gray"),
+            Map.entry("darkgrey", "dark_gray"),
+            Map.entry("darkgray", "dark_gray"),
+            Map.entry("lightgray", "gray"),
+            Map.entry("lightgrey", "gray"),
+            Map.entry("silver", "gray"),
+            Map.entry("magenta", "light_purple"),
+            Map.entry("pink", "light_purple"),
+            Map.entry("purple", "dark_purple"),
+            Map.entry("cyan", "aqua"),
+            Map.entry("orange", "gold"),
+            Map.entry("lime", "green"),
+            Map.entry("brown", "gold"),
+            Map.entry("navy", "dark_blue"),
+            Map.entry("teal", "dark_aqua"));
+
+    /**
+     * 找出字符串里不是标准 MiniMessage 标签的 {@code <...>} 片段。
+     *
+     * <p>为什么需要：MiniMessage 对不认识的标签**不报错**，而是当普通文字原样渲染 ——
+     * 于是管理员把 {@code <dark_gray>} 写成 {@code <dark>} 时，侧边栏/聊天里就会直接出现
+     * {@code <dark>} 这种字面量。这里在 apply 阶段把它挑出来告警，并给出近似建议。
+     *
+     * <p>允许的形式：标准标签及其闭合形式（{@code </bold>}）、否定形式（{@code <!italic>}）、
+     * 十六进制颜色（{@code <#ff0000>}）、带参数的颜色（{@code <color:red>}）、
+     * 以及带参数标签（{@code <gradient:...>}、{@code <hover:show_text:'...'>}、{@code <click:...>}）。
+     *
+     * @return 非法标签原文（去重，保持出现顺序）；没有问题时返回空列表
+     */
+    public static List<String> invalidTags(String raw) {
+        List<String> invalid = new ArrayList<>();
+        if (raw == null || raw.isEmpty()) {
+            return invalid;
+        }
+        int i = 0;
+        while (i < raw.length()) {
+            int open = raw.indexOf('<', i);
+            if (open < 0) {
+                break;
+            }
+            int close = raw.indexOf('>', open + 1);
+            if (close < 0) {
+                break;
+            }
+            String inner = raw.substring(open + 1, close);
+            i = close + 1;
+            if (inner.isEmpty()) {
+                continue;
+            }
+            String token = inner;
+            if (token.startsWith("!")) {
+                token = token.substring(1);
+            }
+            if (token.startsWith("/")) {
+                token = token.substring(1);
+            }
+            String lower = token.toLowerCase(Locale.ROOT);
+            int colon = lower.indexOf(':');
+            String name = colon >= 0 ? lower.substring(0, colon) : lower;
+            if (name.isEmpty() || KNOWN_TAGS.contains(name)) {
+                continue;
+            }
+            if (name.startsWith("#") && isHex(name.substring(1))) {
+                continue;   // <#ff0000>
+            }
+            String literal = "<" + inner + ">";
+            if (!invalid.contains(literal)) {
+                invalid.add(literal);
+            }
+        }
+        return invalid;
+    }
+
+    /** 对常见拼错给出建议写法；没有建议时返回 null。 */
+    public static String suggestTag(String literal) {
+        if (literal == null || literal.length() < 3) {
+            return null;
+        }
+        String inner = literal.substring(1, literal.length() - 1).toLowerCase(Locale.ROOT);
+        inner = inner.replace("!", "").replace("/", "");
+        int colon = inner.indexOf(':');
+        if (colon >= 0) {
+            inner = inner.substring(0, colon);
+        }
+        return TAG_SUGGESTIONS.get(inner);
     }
 }

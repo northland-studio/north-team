@@ -42,7 +42,7 @@ public final class NorthTeamPlugin extends JavaPlugin {
      * 插件版本，用于启动日志与 CI 断言。
      * <b>必须与 build.gradle 的 {@code version} 保持一致</b>（plugin.yml 由 Gradle 展开注入）。
      */
-    public static final String PLUGIN_VERSION = "1.0.1";
+    public static final String PLUGIN_VERSION = "1.1.0";
 
     private static final String PREFIX = "<gray>[<gold>NorthTeam</gold>]</gray> ";
 

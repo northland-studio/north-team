@@ -101,7 +101,7 @@ Tab 补全支持：子命令、`--dry-run` / `--force` 选项，以及从官网�
 
 ```bash
 gradle build --no-daemon
-# 产物：build/libs/NorthTeam-1.0.1.jar
+# 产物：build/libs/NorthTeam-1.1.0.jar
 ```
 
 ### 3.4 真机验收怎么做的
@@ -168,18 +168,27 @@ objective 名与行数），足以证明记分板同步真的生效，而不是�
 `scoreboard.enabled` 为真时（且本地 `scoreboard.master_enabled` 也为真）：
 
 - 创建/更新 objective（默认名 `nt_teams`，标题取 `scoreboard.display_name`，MiniMessage）；
-- **侧边栏**采用经典做法：**每队一行，每行一个记分板队伍**。
-  第 i 行的队伍名为 `sb_<i>`，把行文本（`prefix + display_name`，按该队 `color` 上色）
-  放进该队伍的 prefix，再用一个不可见的 entry 挂分数，分数 = 该队人数。
+- **侧边栏（1.1.0 起为两级结构）**：
+  - **队头行**：该队 `display_name`（按 `color` 上色）+ `" · N"`。N 在
+    `score_mode=member_count` 下是名单人数，在 `score_mode=fixed` 下是 `unit_scores[key]`；
+  - **成员行**：紧随其后是该队**在线**成员各一行（离线成员不占行）；
+  - 每行仍是「一个 `sb_<i>` 记分板队伍 + 一个不可见 entry」的经典做法：行文本放进该行队伍的
+    prefix，entry 只用来挂分值，而**分值在这里只决定行序**（侧边栏按分数从高到低显示）。
+- **行数上限**：`scoreboard.max_rows` 与**客户端硬上限 15 行**同时生效。超限时按队伍顺序截断：
+  前面的队伍保持完整、后面的队伍整体不渲染；第一支队伍自己就装不下时退化为「队头 + 尽量多成员」。
+  每次 apply 会把每行文本写进日志（`侧边栏行文本：[1] 黄队 · 4 …`），方便核对与真机验收。
 - 行队伍统一用 `sb_` 前缀，与 `/team` 使用的正式队伍（`nt_<key>`）**分开命名**，
   避免互相干扰；`sb_*` 也在默认 `protected_teams` 里。
 
-关于「人数」的口径：分数取**配置名单里的人数**（契约 `score_mode=member_count`），
-不是当前在线的玩家数。离线成员在登录后才会真正入队，但记分板上的数字始终等于名单人数，
-这样公示口径稳定。
+> **1.1.0 修掉的重复问题**：1.0.x 的侧边栏行文本是 `prefix + display_name`，所以当你在后台把
+> `prefix` 也写成队名时，侧边栏会出现「队名队名」。现在队头行**只用 `display_name`**，
+> `prefix`/`suffix` 回归契约本义（记分板队伍前后缀，作用于头顶名牌与聊天）。
+
+关于「人数」的口径：`member_count` 取**配置名单里的人数**（含离线成员），不是当前在线人数；
+离线成员登录后才会真正入队，但数字口径稳定。侧边栏里的**成员行**只列当前在线的人。
 
 `position` 的另外两个取值 `list` / `below_name` 在原版里是「按玩家显示」，
-无法使用行队伍方案 —— 此时插件改为给每个成员 entry 上分（分数为其所属队伍人数），
+无法使用行队伍方案 —— 此时插件改为给每个成员 entry 上分（分数为其所属队伍的人数/固定分），
 并清理掉侧边栏行队伍。
 
 ### 所有权与安全
@@ -231,7 +240,7 @@ chat:
 | `apply.wipe_unmanaged_teams` | `true` | 是否删除配置外的受管队伍（全量重建） |
 | `apply.protected_teams` | `["sidebar_*", "sb_*"]` | 永不删除的队伍，支持 `*` 通配 |
 | `scoreboard.master_enabled` | `true` | 本地记分板总开关，`false` 时同步官网要求也不做 |
-| `scoreboard.max_rows` | `15` | 侧边栏最多渲染多少行 |
+| `scoreboard.max_rows` | `15` | 侧边栏最多渲染多少行（**含队头行与成员行**；客户端硬上限 15，超出按 15 处理） |
 | `member.assign_on_join` | `true` | 离线玩家登录时自动补入其队伍 |
 | `chat.enabled` | `true` | 是否由本插件渲染聊天行（Paper 默认渲染不带队伍前缀，故默认开启） |
 | `chat.format` | `"{prefix}{player}<gray>: </gray>{message}"` | 有队伍成员的聊天模板；留空则不改动（回到默认渲染） |

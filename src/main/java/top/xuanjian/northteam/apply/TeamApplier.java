@@ -222,6 +222,15 @@ public final class TeamApplier {
             messages.add("<gray>队伍 <white>" + written + "</white> 个，删除 <white>" + deleted
                     + "</white> 个，侧边栏 <white>" + sync.rows() + "</white> 行，"
                     + "待登录补入 <white>" + plan.pendingCount() + "</white> 人。");
+            // 侧边栏每行的实际文本落到日志：既方便管理员核对（1.1.0 起是「队伍行 + 在线成员行」），
+            // 也让真机验收可以断言渲染结果。
+            if (!sync.rowTexts().isEmpty()) {
+                List<String> labelled = new ArrayList<>();
+                for (int i = 0; i < sync.rowTexts().size(); i++) {
+                    labelled.add("[" + (i + 1) + "] " + sync.rowTexts().get(i));
+                }
+                infoLog.accept("侧边栏行文本：" + String.join("  ", labelled));
+            }
             return new ApplyOutcome(true, false, false, plan, messages);
         } catch (RuntimeException e) {
             // 契约要求：绝不把栈抛给玩家

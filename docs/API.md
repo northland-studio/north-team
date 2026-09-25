@@ -76,8 +76,10 @@
 | `death_message_visibility` | 同上 |
 | `collision_rule` | `always` \| `pushOtherTeams` \| `pushOwnTeam` \| `never` |
 | `members` | 游戏 ID 字符串数组（离线模式名，大小写不敏感去重）；单配置内一个玩家只能在一个队伍，服务端负责校验 |
-| `scoreboard.score_mode` | `member_count`（每队一行，分数=人数）\| `fixed`（分数取 `scoreboard.unit_scores[key]`，本期不使用，保留） |
+| `scoreboard.score_mode` | `member_count`（队头行数字=名单人数）\| `fixed`（队头行数字取 `scoreboard.unit_scores[key]`，缺 key 的队伍回退为人数）**1.1.0 起真正生效** |
+| `scoreboard.unit_scores` | 仅 `fixed` 模式使用：`{ "<队伍 key>": <整数> }`。key 必须对应本配置里的队伍；数值只用于**显示在队头行文本**里 |
 | `scoreboard.position` | `sidebar` \| `list` \| `below_name` |
+| `scoreboard` 渲染（sidebar） | **1.1.0 起为两级结构**：每队一行队头（`display_name` + `" · 数字"`），其后是该队**在线**成员各一行；行数上限 = min(`max_rows`, 15)，超限按队伍顺序截断。1.0.x 的 `prefix + display_name` 行文本已废弃，因此后台把 `prefix` 也写成队名时不再出现重复 |
 | `version` | 官网写入时间戳（`YYYY-MM-DD HH:MM:SS`，UTC+8 本地时间）；插件用它做缓存对比，**相同即跳过应用**（除非 `/nt apply --force`） |
 
 ## 3. 接口清单
@@ -143,6 +145,6 @@
 应用语义（v1 已确认）：
 1. **全量重建**：配置里没有的队伍会被删除（`apply.wipe_unmanaged_teams: true`，`protected_teams` 名单内的除外，默认保护 `sidebar_*`）。
 2. **强制按名单分队**：成员按 `members` 写入对应队伍；在线玩家立即生效，离线玩家由 `PlayerJoinEvent` 在下次登录时补入。
-3. **记分板同步**：`scoreboard.enabled` 为真时创建/更新 objective（默认 `nt_teams`，侧边栏 `display_name`），每个队伍一行（`prefix + display_name`，按 `color` 上色），分数 = 人数。
+3. **记分板同步**：`scoreboard.enabled` 为真时创建/更新 objective（默认 `nt_teams`，侧边栏 `display_name`）。侧边栏为两级结构（1.1.0 起）：每队一行队头（`display_name` + `" · N"`，N 由 `score_mode` 决定），其后是该队在线成员各一行；行数上限 = min(`scoreboard.max_rows`, 15)。
 4. **离线可用**：API 不可达时用 `plugins/NorthTeam/cache/config-<id>.json`（并提示使用的是缓存、版本时间）。
 5. **重启自愈**：`auto_reapply_on_start: true` 时开服用 `state.json` 记录的配置 ID + 缓存自动重放（scoreboard team 不持久化）。

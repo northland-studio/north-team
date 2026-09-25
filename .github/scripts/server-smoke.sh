@@ -193,7 +193,7 @@ expect()      { if has "$1";      then ok "$2"; else bad "$2（日志中缺少�
 expect_absent() { if has_not "$1"; then ok "$2"; else bad "$2（日志中出现了：$1）"; fi; }
 
 log "================= 基础断言 ================="
-expect "NorthTeam v1.0.1" "插件 enable 日志出现"
+expect "NorthTeam v1.1.0" "插件 enable 日志出现"
 expect "已启用" "插件启用提示出现"
 expect "聊天渲染：启用" "聊天渲染（1.0.1 聊天栏前缀）已启用"
 expect_absent "Unknown command" "/nt 命令已注册（无 Unknown command）"
@@ -228,6 +228,12 @@ if [ "$MODE" = "full" ]; then
   expect "服务端正式队伍（nt_*）：4 个" "服务端存在 4 个受管正式队伍"
   expect "记分板 objective nt_teams" "侧边栏 objective nt_teams 已创建"
   expect "行数=4" "侧边栏渲染 4 行"
+
+  # 1.1.0 两级侧边栏：CI 里没有玩家在线，所以只应出现 4 行「队头」，
+  # 文本形如「黄队 · 4」（display_name · 人数/fixed 分），不再拼接 prefix
+  expect "侧边栏行文本：" "侧边栏每行文本已写入日志（便于核对与验收）"
+  expect "黄队 · 4" "队头行文本正确（黄队 · 4，1.1.0 两级布局）"
+  expect "蓝队 · 2" "队头行文本正确（蓝队 · 2）"
 
   # 契约字段 → Bukkit 选项的往返一致性（blue / green 的差异字段）
   expect "颜色=blue" "颜色映射正确（blue）"

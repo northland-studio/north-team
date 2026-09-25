@@ -5,9 +5,11 @@ import top.xuanjian.northteam.model.TeamConfig;
 import top.xuanjian.northteam.model.TeamUnit;
 
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 按契约 2.1 的字段约束校验官网返回的配置。
@@ -96,6 +98,9 @@ public final class TeamConfigValidator {
             }
             checkTextLength(result, unit, "prefix", unit.prefix());
             checkTextLength(result, unit, "suffix", unit.suffix());
+            checkTags(result, where + "（" + unit.safeKey() + "）", "prefix", unit.prefix());
+            checkTags(result, where + "（" + unit.safeKey() + "）", "suffix", unit.suffix());
+            checkTags(result, where + "（" + unit.safeKey() + "）", "display_name", unit.displayName());
             checkEnum(result, unit, "nametag_visibility", unit.nametagVisibility(), ContractValues.VISIBILITY, "always");
             checkEnum(result, unit, "death_message_visibility", unit.deathMessageVisibility(),
                     ContractValues.VISIBILITY, "always");
@@ -116,11 +121,33 @@ public final class TeamConfigValidator {
         }
 
         ScoreboardSettings scoreboard = config.scoreboardOrDisabled();
-        checkScoreboard(result, scoreboard);
+        Set<String> unitKeys = new LinkedHashSet<>();
+        for (TeamUnit unit : config.unitsOrEmpty()) {
+            if (unit.key() != null) {
+                unitKeys.add(unit.key());
+            }
+        }
+        checkScoreboard(result, scoreboard, unitKeys);
         return result;
     }
 
-    private static void checkScoreboard(ValidationResult result, ScoreboardSettings scoreboard) {
+    /**
+     * 1.1.0：MiniMessage 对不认识的标签不报错，而是当普通文字原样显示 ——
+     * 于是 {@code <dark>}（本意 {@code <dark_gray>}）会直接出现在侧边栏/聊天里。
+     * 这里在 apply 阶段挑出来告警，并给出近似建议。
+     */
+    private static void checkTags(ValidationResult result, String where, String field, String value) {
+        for (String literal : MiniMessages.invalidTags(value)) {
+            String suggestion = MiniMessages.suggestTag(literal);
+            result.warning(where + " 的 " + field + " 里的 " + literal
+                    + " 不是标准的 MiniMessage 标签，会按普通文字原样显示"
+                    + (suggestion == null ? "。" : "（是不是想写 <" + suggestion + ">？）"));
+        }
+    }
+
+    private static void checkScoreboard(ValidationResult result, ScoreboardSettings scoreboard,
+                                       Set<String> unitKeys) {
+        checkTags(result, "scoreboard", "display_name", scoreboard.displayName());
         if (!ContractValues.POSITIONS.contains(scoreboard.positionOrDefault())) {
             result.error("scoreboard.position=" + scoreboard.position() + " 非法，只能是 "
                     + ContractValues.POSITIONS + "。");
@@ -140,7 +167,34 @@ public final class TeamConfigValidator {
             result.error("scoreboard.display_name 不是合法的 MiniMessage/颜色码文本。");
         }
         if (ScoreboardSettings.MODE_FIXED.equals(scoreboard.scoreModeOrDefault())) {
-            result.warning("scoreboard.score_mode=fixed 依赖 unit_scores，本期保留字段、按配置值上分。");
+            // 1.1.0：fixed 模式真正生效 —— 数字显示在队头行「队伍名 · N」里，
+            // N 取 unit_scores[key]；缺 key 的队伍回退为名单人数。
+            Map<String, Integer> scores = scoreboard.unitScoresOrEmpty();
+            if (scores.isEmpty()) {
+                result.warning("score_mode=fixed 但 scoreboard.unit_scores 为空，"
+                        + "各队会回退为「按名单人数」显示数字。");
+            }
+            for (Map.Entry<String, Integer> entry : scores.entrySet()) {
+                String key = entry.getKey();
+                if (key == null || key.isBlank()) {
+                    result.error("scoreboard.unit_scores 里存在空 key。");
+                    continue;
+                }
+                if (!unitKeys.contains(key)) {
+                    result.error("scoreboard.unit_scores 的 key " + key
+                            + " 不对应任何队伍（可用 key：" + unitKeys + "）。");
+                    continue;
+                }
+                if (entry.getValue() == null) {
+                    result.error("scoreboard.unit_scores." + key + " 缺少数值。");
+                } else if (Math.abs(entry.getValue()) > 1000000) {
+                    result.warning("scoreboard.unit_scores." + key + "=" + entry.getValue()
+                            + " 数值偏大，侧边栏显示可能不美观。");
+                }
+            }
+        } else if (!scoreboard.unitScoresOrEmpty().isEmpty()) {
+            result.warning("scoreboard.unit_scores 只对 score_mode=fixed 生效，"
+                    + "当前为 " + scoreboard.scoreModeOrDefault() + "，这些数值会被忽略。");
         }
     }
 

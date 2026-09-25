@@ -2,6 +2,8 @@ package top.xuanjian.northteam.apply;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
+import org.bukkit.Bukkit;
+import org.bukkit.entity.Player;
 import org.bukkit.scoreboard.Criteria;
 import org.bukkit.scoreboard.DisplaySlot;
 import org.bukkit.scoreboard.Objective;
@@ -28,10 +30,19 @@ import java.util.Set;
 /**
  * 记分板同步（契约 4.3）。
  *
- * <p>侧边栏采用「每队一行 + 每行一个记分板队伍」的经典做法：
- * 为第 i 行创建一个 {@code sb_<i>} 队伍，把行文本放进它的 prefix，
- * 再用一个不可见字符串作为 entry，把 entry 的分数设为该队人数。
- * 这样行文本可以随意着色/加前缀，而分数仍然属于「该队」。
+ * <p>侧边栏（1.1.0 起）采用**两级结构**：
+ * <ul>
+ *   <li><b>队头行</b>：该队的 {@code display_name}（按 {@code color} 上色），尾部带 {@code " · N"}，
+ *       N 取 {@code score_mode=member_count} 的名单人数或 {@code score_mode=fixed} 的
+ *       {@code unit_scores[key]}；</li>
+ *   <li><b>成员行</b>：紧随其后的该队**在线**成员，每人一行。</li>
+ * </ul>
+ * 每行仍然是「一个 {@code sb_<i>} 记分板队伍 + 一个不可见 entry」的经典做法：行文本放进
+ * 该行队伍的 prefix，entry 只用来挂分值，而分值在这里**只决定行序**（侧边栏按分数从高到低
+ * 显示），因此从总行数递减分配。
+ *
+ * <p>行数同时受 {@code scoreboard.max_rows} 与客户端上限 15 行约束（超出的行客户端不画），
+ * 超限时按队伍顺序截断：前面的队伍保持完整，第一支队就装不下时退化为「队头 + 尽量多成员」。
  *
  * <p>安全性：本类只操作两类对象 ——
  * 名字属于本插件命名空间（{@code sb_}）的队伍，以及本插件此前在 {@code state.json}
@@ -49,12 +60,26 @@ public final class ScoreboardSyncer {
      * @param ok           是否执行成功（创建 objective 失败时为 false）
      * @param rows         侧边栏渲染行数（非 sidebar 位置时为队伍数）
      * @param sidebarTeams 本次使用的侧边栏行队伍名
+     * @param rowTexts     侧边栏各行的纯文本（按渲染顺序），供日志与真机验收断言
      * @param objective    objective 名
      * @param enabled      记分板同步是否实际生效
      * @param warnings     需要提示管理员的中文说明行
      */
-    public record SyncResult(boolean ok, int rows, List<String> sidebarTeams, String objective,
-                             boolean enabled, List<String> warnings) {
+    public record SyncResult(boolean ok, int rows, List<String> sidebarTeams, List<String> rowTexts,
+                             String objective, boolean enabled, List<String> warnings) {
+    }
+
+    /** 客户端侧边栏硬上限：一屏最多显示 15 行，多出来的行客户端直接不画。 */
+    private static final int SIDEBAR_CLIENT_MAX = 15;
+
+    /**
+     * 侧边栏的一行。
+     *
+     * @param text   行文本（放进该行队伍的 prefix）
+     * @param unitKey 归属队伍 key（日志用）
+     * @param header 是否是队头行（true=队伍行，false=成员行）
+     */
+    private record SidebarRow(Component text, String unitKey, boolean header) {
     }
 
     /**
@@ -67,7 +92,7 @@ public final class ScoreboardSyncer {
         List<String> warnings = new ArrayList<>();
         if (scoreboard == null) {
             warnings.add("<red>主记分板不可用（服务器尚未就绪），已跳过记分板同步。");
-            return new SyncResult(false, 0, List.of(), "-", false, warnings);
+            return new SyncResult(false, 0, List.of(), List.of(), "-", false, warnings);
         }
 
         ScoreboardSettings settings = config.scoreboardOrDisabled();
@@ -87,7 +112,7 @@ public final class ScoreboardSyncer {
             if (!dryRun) {
                 removeObjective(scoreboard, objectiveName, warnings);
             }
-            return new SyncResult(true, 0, List.of(), objectiveName, false, warnings);
+            return new SyncResult(true, 0, List.of(), List.of(), objectiveName, false, warnings);
         }
 
         Set<String> ownedSidebar = ownedSidebarTeams(scoreboard, previous);
@@ -95,25 +120,24 @@ public final class ScoreboardSyncer {
         DisplaySlot slot = slotFor(position);
 
         if (slot == DisplaySlot.SIDEBAR) {
-            int limit = Math.min(units.size(), pluginConfig.scoreboardMaxRows());
-            if (units.size() > limit) {
-                warnings.add("<yellow>队伍数 " + units.size() + " 超过 scoreboard.max_rows="
-                        + pluginConfig.scoreboardMaxRows() + "，侧边栏只渲染前 " + limit + " 队。");
-            }
-
             Objective objective = dryRun ? null
                     : obtainObjective(scoreboard, objectiveName, settings, warnings);
             if (!dryRun && objective == null) {
-                return new SyncResult(false, 0, List.of(), objectiveName, false, warnings);
+                return new SyncResult(false, 0, List.of(), List.of(), objectiveName, false, warnings);
             }
+
+            // 1.1.0：两级结构（队头行 + 在线成员行），并在超限前先算好行计划
+            List<SidebarRow> rows = planSidebarRows(units, settings, pluginConfig, warnings);
+            int total = rows.size();
 
             Set<String> needed = new LinkedHashSet<>();
             List<String> sidebarTeams = new ArrayList<>();
-            for (int i = 0; i < limit; i++) {
-                TeamUnit unit = units.get(i);
+            List<String> rowTexts = new ArrayList<>();
+            for (int i = 0; i < total; i++) {
                 String teamName = TeamNames.sidebarTeamName(i + 1);
                 needed.add(teamName);
                 sidebarTeams.add(teamName);
+                rowTexts.add(MiniMessages.toPlainText(rows.get(i).text()));
                 if (dryRun || objective == null) {
                     continue;
                 }
@@ -122,10 +146,11 @@ public final class ScoreboardSyncer {
                     if (row == null) {
                         row = scoreboard.registerNewTeam(teamName);
                     }
-                    row.prefix(lineFor(unit));
+                    row.prefix(rows.get(i).text());
                     String entry = sidebarEntry(i);
                     row.addEntry(entry);
-                    objective.getScore(entry).setScore(scoreOf(unit, settings));
+                    // 分值只用于决定行序（分数高的在上面），所以按总行数递减
+                    objective.getScore(entry).setScore(total - i);
                 } catch (RuntimeException e) {
                     warnings.add("<red>侧边栏第 " + (i + 1) + " 行（" + teamName + "）渲染失败：" + e.getMessage());
                 }
@@ -135,14 +160,15 @@ public final class ScoreboardSyncer {
             if (!dryRun) {
                 objective.setDisplaySlot(slot);
             }
-            return new SyncResult(true, limit, List.copyOf(sidebarTeams), objectiveName, true, warnings);
+            return new SyncResult(true, total, List.copyOf(sidebarTeams), List.copyOf(rowTexts),
+                    objectiveName, true, warnings);
         }
 
         // list / below_name：这两个位置是「按玩家显示」，无法用行队伍方案，
         // 因此给每个成员 entry 上分为其所属队伍的人数。
         Objective objective = dryRun ? null : obtainObjective(scoreboard, objectiveName, settings, warnings);
         if (!dryRun && objective == null) {
-            return new SyncResult(false, 0, List.of(), objectiveName, false, warnings);
+            return new SyncResult(false, 0, List.of(), List.of(), objectiveName, false, warnings);
         }
         cleanupSidebarRows(scoreboard, ownedSidebar, Set.of(), dryRun, warnings);
 
@@ -167,19 +193,92 @@ public final class ScoreboardSyncer {
                 }
             }
         }
-        return new SyncResult(true, units.size(), List.of(), objectiveName, true, warnings);
+        return new SyncResult(true, units.size(), List.of(), List.of(), objectiveName, true, warnings);
     }
 
     // ------------------------------------------------------------------
     // 内部实现
     // ------------------------------------------------------------------
 
-    /** 行文本 = prefix + display_name，并按该队 color 上色（已有显式颜色则不覆盖）。 */
-    private static Component lineFor(TeamUnit unit) {
-        Component prefix = MiniMessages.parse(unit.prefix() == null ? "" : unit.prefix());
-        Component name = MiniMessages.parse(unit.displayName());
+    /**
+     * 推导侧边栏行计划：每队一行队头，紧随其后是该队**在线**成员各一行。
+     *
+     * <p>行数受 {@code scoreboard.max_rows} 与客户端上限 15 双重约束。超限时按队伍顺序
+     * 截断：前面的队伍保持完整，后面的队伍整体不渲染；如果第一支队伍自己就装不下，
+     * 退化成「队头 + 尽量多的成员」，避免整个侧边栏空白。
+     */
+    private List<SidebarRow> planSidebarRows(List<TeamUnit> units, ScoreboardSettings settings,
+                                             PluginConfig pluginConfig, List<String> warnings) {
+        int configured = pluginConfig.scoreboardMaxRows();
+        int cap = Math.max(1, Math.min(configured, SIDEBAR_CLIENT_MAX));
+        if (configured > SIDEBAR_CLIENT_MAX) {
+            warnings.add("<yellow>scoreboard.max_rows=" + configured + " 超过客户端侧边栏上限 "
+                    + SIDEBAR_CLIENT_MAX + " 行，已按 " + SIDEBAR_CLIENT_MAX + " 处理。");
+        }
+
+        List<SidebarRow> rows = new ArrayList<>();
+        boolean truncated = false;
+        for (TeamUnit unit : units) {
+            List<String> online = onlineMembers(unit);
+            int need = 1 + online.size();
+            if (rows.size() + need > cap) {
+                if (rows.isEmpty()) {
+                    rows.add(headerRow(unit, settings));
+                    int room = Math.max(0, cap - 1);
+                    int shown = Math.min(room, online.size());
+                    for (int i = 0; i < shown; i++) {
+                        rows.add(memberRow(unit, online.get(i)));
+                    }
+                    warnings.add("<yellow>队伍 " + unit.safeKey() + " 的在线成员超过侧边栏上限（"
+                            + cap + " 行），只列出前 " + shown + " 名。");
+                } else {
+                    truncated = true;
+                }
+                break;
+            }
+            rows.add(headerRow(unit, settings));
+            for (String name : online) {
+                rows.add(memberRow(unit, name));
+            }
+        }
+        if (truncated) {
+            warnings.add("<yellow>侧边栏上限 " + cap + " 行，已按队伍顺序省略后面的队伍（已渲染 "
+                    + rows.size() + " 行）。");
+        }
+        return rows;
+    }
+
+    /**
+     * 队头行文本：该队 {@code display_name} + {@code " · N"}。
+     *
+     * <p>刻意**不再拼接 prefix**：按契约 prefix/suffix 是记分板队伍的前后缀（作用于头顶名牌
+     * 与聊天），1.0.x 把它们也拼进侧边栏行，于是配置里 prefix 与 display_name 都写队名时，
+     * 侧边栏就会出现「队名队名」的重复。
+     */
+    private static SidebarRow headerRow(TeamUnit unit, ScoreboardSettings settings) {
         NamedTextColor color = TeamProperties.color(unit.color());
-        return prefix.append(name).colorIfAbsent(color);
+        Component text = MiniMessages.parse(unit.displayName())
+                .append(Component.text(" · " + scoreOf(unit, settings)))
+                .colorIfAbsent(color);
+        return new SidebarRow(text, unit.safeKey(), true);
+    }
+
+    /** 成员行文本：在线成员名，按该队颜色上色。 */
+    private static SidebarRow memberRow(TeamUnit unit, String memberName) {
+        NamedTextColor color = TeamProperties.color(unit.color());
+        return new SidebarRow(Component.text(memberName).colorIfAbsent(color), unit.safeKey(), false);
+    }
+
+    /** 该队当前在线的成员（保持配置名单里的顺序）。 */
+    private static List<String> onlineMembers(TeamUnit unit) {
+        List<String> online = new ArrayList<>();
+        for (String member : unit.normalizedMembers()) {
+            Player player = Bukkit.getPlayerExact(member);
+            if (player != null && player.isOnline()) {
+                online.add(member);
+            }
+        }
+        return online;
     }
 
     /**
