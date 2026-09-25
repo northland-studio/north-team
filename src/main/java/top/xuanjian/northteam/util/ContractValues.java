@@ -39,11 +39,25 @@ public final class ContractValues {
     /** 契约 2.1：{@code key} 约束 {@code [a-z0-9_]{1,16}}。 */
     public static final Pattern KEY_PATTERN = Pattern.compile("[a-z0-9_]{1,16}");
 
-    /** 契约 2.1：{@code display_name} 1~32 字符。 */
+    /**
+     * 契约 2.1：{@code display_name} 1~32 字符。
+     *
+     * <p>注意口径：这里限制的是**去掉颜色标签后的可见长度**（校验器用 stripTags 判定），
+     * MiniMessage 标签本身不占额度 —— 这样「多段变色」不会因为标签变长而被拒。
+     */
     public static final int DISPLAY_NAME_MAX = 32;
 
-    /** 契约 2.1：{@code prefix}/{@code suffix} 长度 ≤ 64（含标签）。 */
-    public static final int PREFIX_SUFFIX_MAX = 64;
+    /**
+     * 契约 2.1：{@code prefix}/{@code suffix} 长度 ≤ 256（含标签）。
+     *
+     * <p>1.1.0 起从 64 放宽到 256：MiniMessage 标签很占长度（{@code <dark_gray>…</dark_gray>}
+     * 一段就 21 字符），64 在多段变色 + 图标前缀时很容易撞上限；现代版本的前后缀是
+     * Component，原版没有硬性长度限制，只有客户端显示上的截断，所以按"够用且不离谱"取 256。
+     */
+    public static final int PREFIX_SUFFIX_MAX = 256;
+
+    /** 文本字段的原始长度上限（防止极端长的标签串把存储/日志撑坏）。 */
+    public static final int TEXT_RAW_MAX = 512;
 
     /**
      * 离线模式玩家名（原版玩家名规则）：1~16 位字母/数字/下划线。

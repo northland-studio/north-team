@@ -123,14 +123,17 @@ public final class ServerCollector {
             }
         }
 
-        String displayName = MiniMessages.toPlainText(team.displayName());
-        if (displayName.isBlank()) {
+        // display_name 回传时保留颜色标签（1.1.0 起）：以前这里用 toPlainText 把样式抹平了，
+        // 导致 /nt import 采集回来的队名颜色丢失。现在按「可见长度 ≤ 32」截断，
+        // 标签本身不占额度，与 TeamConfigValidator 的口径一致。
+        String displayName = MiniMessages.serialize(team.displayName());
+        if (displayName == null || displayName.isBlank() || MiniMessages.toPlainText(team.displayName()).isBlank()) {
             displayName = team.getName();
-        }
-        if (displayName.length() > ContractValues.DISPLAY_NAME_MAX) {
-            warnings.add("<yellow>队伍 " + team.getName() + " 的 display_name 超过 "
-                    + ContractValues.DISPLAY_NAME_MAX + " 字符，已截断回传。");
-            displayName = displayName.substring(0, ContractValues.DISPLAY_NAME_MAX);
+        } else if (MiniMessages.stripTags(displayName).length() > ContractValues.DISPLAY_NAME_MAX) {
+            String plain = MiniMessages.stripTags(displayName);
+            warnings.add("<yellow>队伍 " + team.getName() + " 的 display_name 可见长度超过 "
+                    + ContractValues.DISPLAY_NAME_MAX + " 字符，已截断回传（颜色标签会一并丢失）。");
+            displayName = plain.substring(0, ContractValues.DISPLAY_NAME_MAX);
         }
 
         String prefix = cap(MiniMessages.serialize(team.prefix()), team.getName(), "prefix", warnings);
@@ -160,7 +163,7 @@ public final class ServerCollector {
                 List.copyOf(members));
     }
 
-    /** 契约 2.1：prefix/suffix 长度 ≤ 64（含标签），超长需截断，否则官网会 400。 */
+    /** 契约 2.1：prefix/suffix 长度 ≤ 256（含标签；1.1.0 起从 64 放宽），超长需截断，否则官网会 400。 */
     private static String cap(String value, String teamName, String field, List<String> warnings) {
         if (value == null) {
             return "";
