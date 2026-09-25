@@ -203,7 +203,7 @@ LuckPerms 再维护一份）。队伍归属按**已应用配置的成员名单**
 chat:
   enabled: true
   format: "{prefix}{player}<gray>: </gray>{message}"
-  format_no_team: "{player}<gray>: </gray>{message}"
+  format_no_team: "<{player}> {message}"
 ```
 
 占位符：`{prefix}` `{suffix}` `{player}` `{displayname}` `{team}` `{team_key}` `{message}`
@@ -235,7 +235,7 @@ chat:
 | `member.assign_on_join` | `true` | 离线玩家登录时自动补入其队伍 |
 | `chat.enabled` | `true` | 是否由本插件渲染聊天行（Paper 默认渲染不带队伍前缀，故默认开启） |
 | `chat.format` | `"{prefix}{player}<gray>: </gray>{message}"` | 有队伍成员的聊天模板；留空则不改动（回到默认渲染） |
-| `chat.format_no_team` | `"{player}<gray>: </gray>{message}"` | 不在任何队伍里的玩家使用的模板；留空则不改动 |
+| `chat.format_no_team` | `"<{player}> {message}"` | 不在任何队伍里的玩家使用的模板（刻意与原版 `<名字> 消息` 一致）；留空则不改动 |
 | `debug` | `false` | 输出 HTTP 请求等调试日志 |
 
 ### 密钥从哪来
@@ -260,7 +260,7 @@ scoreboard:
 chat:
   enabled: true
   format: "{prefix}{player}<gray>: </gray>{message}"
-  format_no_team: "{player}<gray>: </gray>{message}"
+  format_no_team: "<{player}> {message}"
 ```
 
 ---

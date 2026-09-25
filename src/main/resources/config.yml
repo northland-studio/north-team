@@ -82,8 +82,9 @@ chat:
   format: "{prefix}{player}<gray>: </gray>{message}"
 
   # 不在任何队伍里的玩家使用的格式；留空则不改动这些玩家的聊天。
-  # 默认值与原生 <名字> 消息 的观感一致。
-  format_no_team: "{player}<gray>: </gray>{message}"
+  # 默认刻意与原版 <名字> 消息 保持一致：没队伍的人本来就没有前缀可显示，
+  # 不该因为装了本插件而改变观感。
+  format_no_team: "<{player}> {message}"
 
 # 输出更详细的调试日志（HTTP 请求、缓存预热结果等）。
 debug: false

@@ -39,8 +39,13 @@ public final class PluginConfig {
 
     /** 有队伍成员默认聊天格式：队伍前缀 + 玩家名（按队伍 color 上色）+ 消息。 */
     public static final String DEFAULT_CHAT_FORMAT = "{prefix}{player}<gray>: </gray>{message}";
-    /** 无队伍玩家默认聊天格式：与原生 {@code <名字> 消息} 观感一致。 */
-    public static final String DEFAULT_CHAT_FORMAT_NO_TEAM = "{player}<gray>: </gray>{message}";
+    /**
+     * 无队伍玩家默认聊天格式。
+     *
+     * <p>刻意与原版 {@code <名字> 消息} 保持一致：没有队伍的人本来就没有前缀可显示，
+     * 不应该因为装了本插件而改变观感。
+     */
+    public static final String DEFAULT_CHAT_FORMAT_NO_TEAM = "<{player}> {message}";
 
     private PluginConfig(String apiBase, String serverKey, int connectTimeoutSeconds,
                          int requestTimeoutSeconds, boolean autoReapplyOnStart,
