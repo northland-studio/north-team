@@ -6,6 +6,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonParseException;
 import top.xuanjian.northteam.model.StateSnapshot;
 import top.xuanjian.northteam.model.TeamConfig;
+import top.xuanjian.northteam.util.Json;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -109,9 +110,40 @@ public final class PluginState {
         try (Reader reader = Files.newBufferedReader(stateFile, StandardCharsets.UTF_8)) {
             StateSnapshot loaded = gson.fromJson(reader, StateSnapshot.class);
             snapshot = loaded == null ? StateSnapshot.empty() : loaded;
+            restoreAppliedConfigFromCache();
         } catch (IOException | JsonParseException e) {
             warnLog.accept("state.json 读取失败（将按空状态启动）：" + e.getMessage());
             snapshot = StateSnapshot.empty();
+        }
+    }
+
+    /**
+     * 启动时把 {@code state.json} 指向的缓存配置读回内存。
+     *
+     * <p>为什么需要：{@code appliedConfig} 是纯内存字段，重启后必然为空；而聊天栏前缀渲染
+     * 需要它来反查「玩家属于哪个队伍」。开机自动重放（{@code auto_reapply_on_start}）会在启动
+     * 3 秒后才写回它，中间这段窗口以及重放失败（官网不可达且无缓存）的情况下，就会退化成
+     * 「所有人无队伍」。这里直接从本地缓存恢复，作为兜底。
+     */
+    private void restoreAppliedConfigFromCache() {
+        Integer id = snapshot.appliedConfigId();
+        if (id == null) {
+            return;
+        }
+        try {
+            Optional<String> cached = readCache(id);
+            if (cached.isEmpty()) {
+                return;
+            }
+            TeamConfig config = Json.parse(cached.get(), TeamConfig.class);
+            if (config != null) {
+                appliedConfig = config;
+                if (appliedConfigSource == null || "未应用".equals(appliedConfigSource)) {
+                    appliedConfigSource = "本地缓存（启动恢复）";
+                }
+            }
+        } catch (JsonParseException e) {
+            warnLog.accept("启动恢复已应用配置失败（聊天前缀等查询会退化）：" + e.getMessage());
         }
     }
 
@@ -158,6 +190,11 @@ public final class PluginState {
                 true,
                 "应用成功（" + source + "）");
         appliedConfigSource = source;
+        // 1.0.1 修：这里必须同时把配置本体留在内存里。
+        // 运行期需要按玩家名反查队伍（聊天栏前缀渲染），而它读的是 appliedConfig；
+        // 之前只更新 snapshot 与来源字符串，导致 appliedConfig 始终为空 —— 表现为
+        // 「聊天渲染已启用但所有人都是无队伍」。
+        appliedConfig = config;
         save();
     }
 
