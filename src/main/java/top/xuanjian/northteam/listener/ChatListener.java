@@ -20,9 +20,9 @@ import java.util.Optional;
  *
  * <p>几个刻意的设计取舍：
  * <ul>
- *   <li>优先级用 {@link EventPriority#NORMAL}：如果服务端另有聊天插件（例如
- *       EssentialsXChat）也设了 renderer，后设置的会覆盖先设置的 —— 那种情况下应该
- *       把 {@code chat.enabled} 关掉，避免两个插件互相盖；</li>
+ *   <li>渲染优先级用 {@link EventPriority#HIGHEST}：如果服务端另有插件（例如
+ *       EssentialsX 自带 chat provider）也设置了 renderer，**后设置的会覆盖先设置的**，
+ *       用最高优先级保证我们最后落笔；</li>
  *   <li>{@code chat.format_no_team} 留空时**不改动**无队伍玩家的聊天，交回默认渲染；</li>
  *   <li>队伍归属只查已应用配置的成员名单（{@link NorthTeamPlugin#teamOf(String)}），
  *       不查 Bukkit 记分板 —— 本事件在异步线程触发，读记分板不是线程安全的。</li>
@@ -36,7 +36,24 @@ public final class ChatListener implements Listener {
         this.plugin = plugin;
     }
 
-    @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
+    /**
+     * 诊断观察点：以最低优先级、且不忽略取消地接一次事件，只写 debug 日志。
+     *
+     * <p>存在的意义：{@link AsyncChatEvent} 有可能被其它插件（登录类插件、禁言类插件）取消，
+     * 也可能在某些服务端版本上根本不触发。渲染处理器为了尊重"被取消就别渲染"用了
+     * {@code ignoreCancelled = true}，一旦事件被取消就静默跳过 —— 排查时完全看不出区别。
+     * 这个观察点把这些情况记进日志，便于一眼判断「事件没来」还是「来了但被取消」。
+     */
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
+    public void observe(AsyncChatEvent event) {
+        PluginConfig config = plugin.config();
+        if (config != null && config.debug()) {
+            plugin.info("[debug] 收到 AsyncChatEvent: " + event.getPlayer().getName()
+                    + " cancelled=" + event.isCancelled());
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onChat(AsyncChatEvent event) {
         PluginConfig config = plugin.config();
         if (config == null || !config.chatEnabled()) {
@@ -48,6 +65,11 @@ public final class ChatListener implements Listener {
         if (format == null || format.isBlank()) {
             // 留空 = 保持默认渲染（无队伍玩家常见配置）
             return;
+        }
+        if (config.debug()) {
+            plugin.info("[debug] 渲染聊天: " + player.getName()
+                    + " 队伍=" + (unit.isPresent() ? unit.get().safeKey() : "<无队伍>")
+                    + " 格式=" + format);
         }
         event.renderer((source, sourceDisplayName, message, viewer) ->
                 ChatFormat.render(format, source.getName(), unit.orElse(null), sourceDisplayName, message));
