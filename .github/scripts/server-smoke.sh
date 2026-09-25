@@ -193,8 +193,9 @@ expect()      { if has "$1";      then ok "$2"; else bad "$2（日志中缺少�
 expect_absent() { if has_not "$1"; then ok "$2"; else bad "$2（日志中出现了：$1）"; fi; }
 
 log "================= 基础断言 ================="
-expect "NorthTeam v1.0.0" "插件 enable 日志出现"
+expect "NorthTeam v1.0.1" "插件 enable 日志出现"
 expect "已启用" "插件启用提示出现"
+expect "聊天渲染：启用" "聊天渲染（1.0.1 聊天栏前缀）已启用"
 expect_absent "Unknown command" "/nt 命令已注册（无 Unknown command）"
 expect_absent "An internal error occurred" "没有服务端内部错误"
 expect_absent "at top.xuanjian.northteam" "没有本插件异常栈"

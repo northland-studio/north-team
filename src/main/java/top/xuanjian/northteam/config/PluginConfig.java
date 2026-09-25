@@ -1,6 +1,7 @@
 package top.xuanjian.northteam.config;
 
 import org.bukkit.configuration.file.FileConfiguration;
+import top.xuanjian.northteam.chat.ChatFormat;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -31,13 +32,22 @@ public final class PluginConfig {
     private final boolean scoreboardMasterEnabled;
     private final int scoreboardMaxRows;
     private final boolean assignOnJoin;
+    private final boolean chatEnabled;
+    private final String chatFormat;
+    private final String chatNoTeamFormat;
     private final boolean debug;
+
+    /** 有队伍成员默认聊天格式：队伍前缀 + 玩家名（按队伍 color 上色）+ 消息。 */
+    public static final String DEFAULT_CHAT_FORMAT = "{prefix}{player}<gray>: </gray>{message}";
+    /** 无队伍玩家默认聊天格式：与原生 {@code <名字> 消息} 观感一致。 */
+    public static final String DEFAULT_CHAT_FORMAT_NO_TEAM = "{player}<gray>: </gray>{message}";
 
     private PluginConfig(String apiBase, String serverKey, int connectTimeoutSeconds,
                          int requestTimeoutSeconds, boolean autoReapplyOnStart,
                          boolean wipeUnmanagedTeams, List<String> protectedTeams,
                          boolean scoreboardMasterEnabled, int scoreboardMaxRows,
-                         boolean assignOnJoin, boolean debug) {
+                         boolean assignOnJoin, boolean chatEnabled, String chatFormat,
+                         String chatNoTeamFormat, boolean debug) {
         this.apiBase = apiBase;
         this.serverKey = serverKey;
         this.connectTimeoutSeconds = connectTimeoutSeconds;
@@ -48,6 +58,9 @@ public final class PluginConfig {
         this.scoreboardMasterEnabled = scoreboardMasterEnabled;
         this.scoreboardMaxRows = scoreboardMaxRows;
         this.assignOnJoin = assignOnJoin;
+        this.chatEnabled = chatEnabled;
+        this.chatFormat = chatFormat;
+        this.chatNoTeamFormat = chatNoTeamFormat;
         this.debug = debug;
     }
 
@@ -82,6 +95,31 @@ public final class PluginConfig {
             maxRows = 15;
         }
 
+        // 聊天渲染（1.0.1）：默认开启，因为 Paper 默认渲染不带记分板队伍前缀
+        boolean chatEnabled = config.getBoolean("chat.enabled", true);
+        String chatFormat = config.getString("chat.format", DEFAULT_CHAT_FORMAT);
+        String chatNoTeamFormat = config.getString("chat.format_no_team", DEFAULT_CHAT_FORMAT_NO_TEAM);
+        if (chatFormat == null) {
+            chatFormat = DEFAULT_CHAT_FORMAT;
+        }
+        if (chatNoTeamFormat == null) {
+            chatNoTeamFormat = DEFAULT_CHAT_FORMAT_NO_TEAM;
+        }
+        if (chatEnabled) {
+            if (chatFormat.isBlank()) {
+                logger.warning("chat.format 为空：有队伍的玩家聊天将保持服务端默认渲染"
+                        + "（不会有队伍前缀）。如需前缀请填写 {prefix}{player}<gray>: </gray>{message}");
+            }
+            for (String token : ChatFormat.unknownPlaceholders(chatFormat)) {
+                logger.warning("chat.format 里的占位符 " + token + " 不被支持，将按字面量显示。"
+                        + "可用占位符：" + String.join(" ", ChatFormat.KNOWN_PLACEHOLDERS));
+            }
+            for (String token : ChatFormat.unknownPlaceholders(chatNoTeamFormat)) {
+                logger.warning("chat.format_no_team 里的占位符 " + token + " 不被支持，将按字面量显示。"
+                        + "可用占位符：" + String.join(" ", ChatFormat.KNOWN_PLACEHOLDERS));
+            }
+        }
+
         return new PluginConfig(
                 rawBase == null ? "" : rawBase.trim(),
                 rawKey == null ? "" : rawKey.trim(),
@@ -93,6 +131,9 @@ public final class PluginConfig {
                 config.getBoolean("scoreboard.master_enabled", true),
                 maxRows,
                 config.getBoolean("member.assign_on_join", true),
+                chatEnabled,
+                chatFormat.trim(),
+                chatNoTeamFormat.trim(),
                 config.getBoolean("debug", false));
     }
 
@@ -146,6 +187,21 @@ public final class PluginConfig {
 
     public boolean assignOnJoin() {
         return assignOnJoin;
+    }
+
+    /** 是否由本插件渲染聊天行（1.0.1 新增，默认 true）。 */
+    public boolean chatEnabled() {
+        return chatEnabled;
+    }
+
+    /** 有队伍成员的聊天模板；空字符串表示不改动，交回默认渲染。 */
+    public String chatFormat() {
+        return chatFormat;
+    }
+
+    /** 不在任何队伍里的玩家的聊天模板；空字符串表示不改动。 */
+    public String chatNoTeamFormat() {
+        return chatNoTeamFormat;
     }
 
     public boolean debug() {

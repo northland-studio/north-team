@@ -89,7 +89,7 @@ Tab 补全支持：子命令、`--dry-run` / `--force` 选项，以及从官网�
 
 1. 打开仓库的 **Actions** 页面，点进最近一次成功的 `build` 运行。
 2. 在页面底部 **Artifacts** 里下载 `NorthTeam-jar`。
-3. 解压得到 `NorthTeam-<version>.jar`（例如 `NorthTeam-1.0.0.jar`），
+3. 解压得到 `NorthTeam-<version>.jar`（例如 `NorthTeam-1.0.1.jar`），
    这就是可安装的 fat jar（Gson 已 relocate，不会与其它插件冲突）。
 
 也可以从 `server-test` 运行的 artifact `server-test-artifacts` 里拿到
@@ -101,7 +101,7 @@ Tab 补全支持：子命令、`--dry-run` / `--force` 选项，以及从官网�
 
 ```bash
 gradle build --no-daemon
-# 产物：build/libs/NorthTeam-1.0.0.jar
+# 产物：build/libs/NorthTeam-1.0.1.jar
 ```
 
 ### 3.4 真机验收怎么做的
@@ -188,6 +188,35 @@ objective 名与行数），足以证明记分板同步真的生效，而不是�
 （侧边栏队伍必须含有本插件生成的不可见 entry）。
 即便别的插件也用了 `sb_` 前缀，也不会被误删。
 
+### 聊天栏队伍前缀（1.0.1 新增）
+
+**问题**：Bukkit/Paper 的默认聊天渲染用的是 `player.getName()`，不带记分板队伍装饰，
+所以**队伍前缀不会出现在聊天栏**；而进退服消息走的是 `displayName`，前缀能显示出来 ——
+两边不一致（对应老问题 [SPIGOT-564](https://hub.spigotmc.org/jira/browse/SPIGOT-564)）。
+
+**做法**：插件监听 Paper 的 `AsyncChatEvent`，按 `chat.format` 模板自己渲染聊天行，
+前缀取值仍然是官网后台配置里的 `prefix` / `suffix` / `color`（单一数据源，不用去
+LuckPerms 再维护一份）。队伍归属按**已应用配置的成员名单**匹配（大小写不敏感），
+所以在异步线程里也不碰记分板。
+
+```yaml
+chat:
+  enabled: true
+  format: "{prefix}{player}<gray>: </gray>{message}"
+  format_no_team: "{player}<gray>: </gray>{message}"
+```
+
+占位符：`{prefix}` `{suffix}` `{player}` `{displayname}` `{team}` `{team_key}` `{message}`
+（`{player}` 会自动用所属队伍的 `color` 上色）。字面量部分支持 MiniMessage 与 `&` 颜色码；
+未知占位符按字面量保留，只会在 `/nt reload` 时告警，不会让整条聊天消失。
+
+注意事项：
+
+- 如果有别的插件（例如 EssentialsXChat）也在渲染聊天，两个 renderer 会互相覆盖 ——
+  这时把 `chat.enabled` 设为 `false`，只留一个插件负责聊天渲染；
+- 玩家必须**在队伍成员名单里**才有前缀：改完名单要 `/nt apply <id>`（在线即时生效），
+  离线玩家靠 `member.assign_on_join` 在下次登录补入。
+
 ---
 
 ## 5. 配置项说明（`config.yml`）
@@ -204,6 +233,9 @@ objective 名与行数），足以证明记分板同步真的生效，而不是�
 | `scoreboard.master_enabled` | `true` | 本地记分板总开关，`false` 时同步官网要求也不做 |
 | `scoreboard.max_rows` | `15` | 侧边栏最多渲染多少行 |
 | `member.assign_on_join` | `true` | 离线玩家登录时自动补入其队伍 |
+| `chat.enabled` | `true` | 是否由本插件渲染聊天行（Paper 默认渲染不带队伍前缀，故默认开启） |
+| `chat.format` | `"{prefix}{player}<gray>: </gray>{message}"` | 有队伍成员的聊天模板；留空则不改动（回到默认渲染） |
+| `chat.format_no_team` | `"{player}<gray>: </gray>{message}"` | 不在任何队伍里的玩家使用的模板；留空则不改动 |
 | `debug` | `false` | 输出 HTTP 请求等调试日志 |
 
 ### 密钥从哪来
@@ -225,6 +257,10 @@ apply:
 scoreboard:
   master_enabled: true
   max_rows: 15
+chat:
+  enabled: true
+  format: "{prefix}{player}<gray>: </gray>{message}"
+  format_no_team: "{player}<gray>: </gray>{message}"
 ```
 
 ---

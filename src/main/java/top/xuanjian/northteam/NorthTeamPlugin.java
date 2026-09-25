@@ -11,14 +11,17 @@ import top.xuanjian.northteam.apply.ServerCollector;
 import top.xuanjian.northteam.apply.TeamApplier;
 import top.xuanjian.northteam.command.NorthTeamCommand;
 import top.xuanjian.northteam.config.PluginConfig;
+import top.xuanjian.northteam.listener.ChatListener;
 import top.xuanjian.northteam.listener.PlayerJoinListener;
 import top.xuanjian.northteam.model.ConfigSummary;
 import top.xuanjian.northteam.model.TeamConfig;
+import top.xuanjian.northteam.model.TeamUnit;
 import top.xuanjian.northteam.state.PluginState;
 import top.xuanjian.northteam.util.Json;
 import top.xuanjian.northteam.util.MiniMessages;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 
 /**
@@ -39,7 +42,7 @@ public final class NorthTeamPlugin extends JavaPlugin {
      * 插件版本，用于启动日志与 CI 断言。
      * <b>必须与 build.gradle 的 {@code version} 保持一致</b>（plugin.yml 由 Gradle 展开注入）。
      */
-    public static final String PLUGIN_VERSION = "1.0.0";
+    public static final String PLUGIN_VERSION = "1.0.1";
 
     private static final String PREFIX = "<gray>[<gold>NorthTeam</gold>]</gray> ";
 
@@ -70,6 +73,7 @@ public final class NorthTeamPlugin extends JavaPlugin {
         registerCommand();
 
         getServer().getPluginManager().registerEvents(new PlayerJoinListener(applier), this);
+        getServer().getPluginManager().registerEvents(new ChatListener(this), this);
 
         warnIfUnconfigured();
 
@@ -84,6 +88,12 @@ public final class NorthTeamPlugin extends JavaPlugin {
 
         getLogger().info("NorthTeam v" + PLUGIN_VERSION + " 已启用（API: " + pluginConfig.apiBase()
                 + "，server_key: " + (pluginConfig.hasServerKey() ? "已配置" : "未配置") + "）");
+        if (pluginConfig.chatEnabled()) {
+            getLogger().info("[NorthTeam] 聊天渲染：启用（format=" + plain(pluginConfig.chatFormat())
+                    + "）");
+        } else {
+            getLogger().info("[NorthTeam] 聊天渲染：关闭（聊天栏沿用服务端默认格式，不含队伍前缀）");
+        }
     }
 
     @Override
@@ -245,6 +255,34 @@ public final class NorthTeamPlugin extends JavaPlugin {
 
     public List<ConfigSummary> cachedSummaries() {
         return cachedSummaries;
+    }
+
+    /**
+     * 按玩家名查其所属队伍（大小写不敏感，契约 2.1）。
+     *
+     * <p>数据来源是**本次已应用配置的成员名单**，不查 Bukkit 记分板：
+     * {@code AsyncChatEvent} 在异步线程触发，读记分板不是线程安全的。队伍数量是本插件
+     * 自己配置里的小列表（≤ {@code scoreboard.max_rows} 量级），逐队比对足够快。
+     *
+     * @return 命中的队伍；玩家不在任何队伍时为 {@link Optional#empty()}
+     */
+    public Optional<TeamUnit> teamOf(String playerName) {
+        if (playerName == null || playerName.isBlank()) {
+            return Optional.empty();
+        }
+        TeamConfig applied = state.appliedConfig().orElse(null);
+        if (applied == null) {
+            return Optional.empty();
+        }
+        String needle = playerName.toLowerCase(Locale.ROOT);
+        for (TeamUnit unit : applied.unitsOrEmpty()) {
+            for (String member : unit.normalizedMembers()) {
+                if (member.toLowerCase(Locale.ROOT).equals(needle)) {
+                    return Optional.of(unit);
+                }
+            }
+        }
+        return Optional.empty();
     }
 
     /** {@code /nt reload}：重读 config.yml 并重建 HTTP 客户端。 */

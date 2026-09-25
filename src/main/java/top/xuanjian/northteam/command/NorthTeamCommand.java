@@ -162,6 +162,12 @@ public final class NorthTeamCommand implements CommandExecutor, TabCompleter {
                         + " mode=" + scoreboard.scoreModeOrDefault()
                         + " title=" + scoreboard.displayNameOrDefault());
 
+                var chatConfig = plugin.config();
+                lines.add("<gray>聊天渲染：<white>"
+                        + (chatConfig != null && chatConfig.chatEnabled() ? "启用" : "关闭")
+                        + "</white> <dark_gray>format=" + quote(chatConfig == null ? "" : chatConfig.chatFormat())
+                        + " 无队伍=" + quote(chatConfig == null ? "" : chatConfig.chatNoTeamFormat()));
+
                 for (TeamUnit unit : top.xuanjian.northteam.apply.TeamApplier.sortedUnits(config)) {
                     lines.add("<gray> • <white>" + unit.safeKey() + "</white> " + unit.displayName()
                             + " <dark_gray>颜色=" + unit.color()
