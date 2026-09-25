@@ -271,7 +271,20 @@ public final class MiniMessages {
             Map.entry("lime", "green"),
             Map.entry("brown", "gold"),
             Map.entry("navy", "dark_blue"),
-            Map.entry("teal", "dark_aqua"));
+            Map.entry("teal", "dark_aqua"),
+            // 用惯了传统式缩写的人最常写错的几个（MiniMessage 不认 b/i/u/s）
+            Map.entry("b", "bold"),
+            Map.entry("i", "italic"),
+            Map.entry("u", "underlined"),
+            Map.entry("s", "strikethrough"),
+            Map.entry("st", "strikethrough"),
+            Map.entry("obf", "obfuscated"),
+            Map.entry("k", "obfuscated"),
+            Map.entry("r", "reset"),
+            Map.entry("l", "bold"),
+            Map.entry("o", "italic"),
+            Map.entry("n", "underlined"),
+            Map.entry("m", "strikethrough"));
 
     /**
      * 找出字符串里不是标准 MiniMessage 标签的 {@code <...>} 片段。

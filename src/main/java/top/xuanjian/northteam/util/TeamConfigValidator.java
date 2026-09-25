@@ -139,9 +139,12 @@ public final class TeamConfigValidator {
     private static void checkTags(ValidationResult result, String where, String field, String value) {
         for (String literal : MiniMessages.invalidTags(value)) {
             String suggestion = MiniMessages.suggestTag(literal);
-            result.warning(where + " 的 " + field + " 里的 " + literal
+            // 日志输出会经过 stripTags（把 <...> 当标签剥掉），所以这里用全角括号包住标签原文，
+            // 否则告警会显示成「prefix 里的  不是标准标签」这种看不懂的空白。
+            String shown = literal.replace('<', '「').replace('>', '」');
+            result.warning(where + " 的 " + field + " 里的 " + shown
                     + " 不是标准的 MiniMessage 标签，会按普通文字原样显示"
-                    + (suggestion == null ? "。" : "（是不是想写 <" + suggestion + ">？）"));
+                    + (suggestion == null ? "。" : "（是不是想写「" + suggestion + "」？）"));
         }
     }
 
